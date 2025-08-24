@@ -9,7 +9,7 @@
 const uint32_t SAMPLERATE = 16000;
 const byte ledPin = BUILTIN_LED;
 const byte USBPin = 10;
-const int recording_threshold = 512;    // threshold for activating recording, gets set through webserver and manual calibration
+int recording_threshold = 512;    // threshold for activating recording, gets set through webserver and manual calibration
 
 I2SClass i2s;
 
@@ -69,6 +69,40 @@ void removeDir(fs::FS &fs, const char *path) {
   }
 }
 
+void processSerialCommand(String command) {
+  command.trim();
+  
+  if (command.startsWith("SET_THRESHOLD:")) {
+    int threshold = command.substring(14).toInt();
+    if (threshold > 0 && threshold <= 4095) {
+      recording_threshold = threshold;
+      Serial.printf("Threshold set to: %d\n", recording_threshold);
+    } else {
+      Serial.println("Invalid threshold value (1-4095)");
+    }
+  }
+  else if (command == "START_RECORDING") {
+    Serial.println("Manual recording triggered");
+    recordAudio();
+  }
+  else if (command == "GET_SD_INFO") {
+    Serial.printf("Total space: %lluMB\n", SD.totalBytes() / (1024 * 1024));
+    Serial.printf("Used space: %lluMB\n", SD.usedBytes() / (1024 * 1024));
+    Serial.printf("Free space: %lluMB\n", (SD.totalBytes() - SD.usedBytes()) / (1024 * 1024));
+  }
+  else if (command == "GET_THRESHOLD") {
+    Serial.printf("Current threshold: %d\n", recording_threshold);
+  }
+  else if (command == "STATUS") {
+    Serial.println("ESP32 Voice Recorder Ready");
+    Serial.printf("Threshold: %d\n", recording_threshold);
+    Serial.printf("USB Power: %s\n", digitalRead(USBPin) == HIGH ? "Connected" : "Disconnected");
+  }
+  else {
+    Serial.println("Unknown command");
+  }
+}
+
 void setup() {
   Serial.begin(115200);
 
@@ -88,12 +122,20 @@ void setup() {
   Serial.printf("Total space: %lluMB\n", SD.totalBytes() / (1024 * 1024));
   Serial.printf("Used space: %lluMB\n", SD.usedBytes() / (1024 * 1024));
 
+  Serial.println("ESP32 Voice Recorder Ready - Send commands via Serial");
   delay(500);
 }
 
 void loop() {
+  
+  
   if ( digitalRead(USBPin) == HIGH){
     Serial.println("5V over USB detected!");
+    // Check for serial commands
+    if (Serial.available()) {
+      String command = Serial.readStringUntil('\n');
+      processSerialCommand(command);
+    }
   }
   else{
     esp_sleep_enable_timer_wakeup(SLEEP_TIME);

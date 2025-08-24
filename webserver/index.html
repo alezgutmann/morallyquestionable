@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8" />
+    <title>ESP32 Voice Recording Controller</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <h1>ESP32 Voice Recording Controller</h1>
+        
+        <div class="connection-section">
+            <h2>Connection</h2>
+            <div class="status">
+                Status: <span id="connection-status" class="disconnected">Disconnected</span>
+            </div>
+            <div class="buttons">
+                <button onclick="connectToESP32()">Connect to ESP32</button>
+                <button onclick="disconnectFromESP32()">Disconnect</button>
+            </div>
+        </div>
+
+        <div class="controls-section">
+            <h2>Controls</h2>
+            <div class="buttons">
+                <button onclick="triggerRecording()">Trigger Recording</button>
+                <button onclick="getSDCardInfo()">Get SD Card Info</button>
+            </div>
+            
+            <div class="threshold-control">
+                <label for="threshold">Recording Threshold:</label>
+                <input type="range" id="threshold" min="100" max="2000" value="512">
+                <span id="threshold-value">512</span>
+                <button onclick="setThreshold()">Set Threshold</button>
+            </div>
+        </div>
+
+        <div class="output-section">
+            <h2>Output</h2>
+            <div class="ausgabe"></div>
+        </div>
+    </div>
+
+    <script src="main.js"></script>
+    <script>
+        // Update threshold display
+        document.getElementById('threshold').addEventListener('input', function() {
+            document.getElementById('threshold-value').textContent = this.value;
+        });
+
+        function setThreshold() {
+            const threshold = document.getElementById('threshold').value;
+            setRecordingThreshold(threshold);
+        }
+    </script>
+</body>
+</html>
