@@ -2,8 +2,7 @@
 #include "FS.h"
 #include "SD.h"
 
-#define SLEEP_PERCENTAGE 50               // in percent % (e.g. 50 = 50%) -- part that the recorder will be asleep
-#define SLEEP_TIME SLEEP_PERCENTAGE*10    // in microseconds
+#define SLEEP_TIME 500    // in microseconds
 #define RECORDING_LENGTH 1                // in seconds 
 #define THRESHOLD_SAMPLES 5               // amount of samples that are used to determine if i am speaking
 
