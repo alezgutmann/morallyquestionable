@@ -8,7 +8,7 @@
 
 const uint32_t SAMPLERATE = 16000;
 const byte ledPin = BUILTIN_LED;
-const byte USBPin = 10;
+const byte USBPin = 9;
 int recording_threshold = 512;    // threshold for activating recording, gets set through webserver and manual calibration
 
 I2SClass i2s;
@@ -130,7 +130,7 @@ void loop() {
   
   
   if ( digitalRead(USBPin) == HIGH){
-    Serial.println("5V over USB detected!");
+    // Serial.println("5V over USB detected!");
     // Check for serial commands
     if (Serial.available()) {
       String command = Serial.readStringUntil('\n');
