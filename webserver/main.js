@@ -4,6 +4,109 @@ class ESP32SerialCommunicator {
         this.reader = null;
         this.writer = null;
         this.isConnected = false;
+        this.audioFiles = [];
+        this.isRecording = false;
+        this.currentAudioLevel = 0;
+        
+        // Initialize audio visualization
+        this.initializeAudioVisualization();
+    }
+
+    // Initialize audio canvas and visualization
+    initializeAudioVisualization() {
+        this.canvas = document.getElementById('audioCanvas');
+        this.ctx = this.canvas ? this.canvas.getContext('2d') : null;
+        
+        if (this.ctx) {
+            // Start animation loop for live visualization
+            this.animateAudioLevel();
+        }
+    }
+
+    // Animate the audio level visualization
+    animateAudioLevel() {
+        const animate = () => {
+            this.drawAudioVisualization();
+            requestAnimationFrame(animate);
+        };
+        animate();
+    }
+
+    // Draw audio visualization on canvas
+    drawAudioVisualization() {
+        if (!this.ctx) return;
+        
+        const width = this.canvas.width;
+        const height = this.canvas.height;
+        
+        // Clear canvas
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillRect(0, 0, width, height);
+        
+        // Draw grid lines
+        this.ctx.strokeStyle = '#e9ecef';
+        this.ctx.lineWidth = 1;
+        
+        // Horizontal grid lines
+        for (let i = 0; i <= 10; i++) {
+            const y = (height / 10) * i;
+            this.ctx.beginPath();
+            this.ctx.moveTo(0, y);
+            this.ctx.lineTo(width, y);
+            this.ctx.stroke();
+        }
+        
+        // Vertical grid lines
+        for (let i = 0; i <= 20; i++) {
+            const x = (width / 20) * i;
+            this.ctx.beginPath();
+            this.ctx.moveTo(x, 0);
+            this.ctx.lineTo(x, height);
+            this.ctx.stroke();
+        }
+        
+        // Draw current audio level
+        if (this.currentAudioLevel > 0) {
+            const normalizedLevel = Math.min(this.currentAudioLevel / 2048, 1); // Normalize to 0-1
+            const barHeight = normalizedLevel * height;
+            
+            // Draw level bar
+            this.ctx.fillStyle = this.isRecording ? '#dc3545' : '#28a745';
+            this.ctx.fillRect(width - 50, height - barHeight, 40, barHeight);
+            
+            // Draw level text
+            this.ctx.fillStyle = '#333';
+            this.ctx.font = '12px Arial';
+            this.ctx.fillText(`${this.currentAudioLevel}`, width - 45, height - barHeight - 5);
+        }
+        
+        // Draw recording indicator
+        if (this.isRecording) {
+            this.ctx.fillStyle = '#dc3545';
+            this.ctx.font = 'bold 16px Arial';
+            this.ctx.fillText('● RECORDING', 10, 25);
+        }
+        
+        // Draw threshold line
+        const thresholdElement = document.getElementById('threshold');
+        if (thresholdElement) {
+            const threshold = parseInt(thresholdElement.value);
+            const thresholdY = height - (threshold / 2048) * height;
+            
+            this.ctx.strokeStyle = '#ffc107';
+            this.ctx.lineWidth = 2;
+            this.ctx.setLineDash([5, 5]);
+            this.ctx.beginPath();
+            this.ctx.moveTo(0, thresholdY);
+            this.ctx.lineTo(width, thresholdY);
+            this.ctx.stroke();
+            this.ctx.setLineDash([]);
+            
+            // Threshold label
+            this.ctx.fillStyle = '#ffc107';
+            this.ctx.font = '12px Arial';
+            this.ctx.fillText(`Threshold: ${threshold}`, 10, thresholdY - 5);
+        }
     }
 
     // Check if Web Serial API is supported
@@ -76,6 +179,49 @@ class ESP32SerialCommunicator {
         const outputElement = document.querySelector('.ausgabe');
         if (outputElement) {
             outputElement.textContent += data;
+            outputElement.scrollTop = outputElement.scrollHeight;
+        }
+
+        // Parse audio level data (if ESP32 sends it)
+        const levelMatch = data.match(/LEVEL:(\d+)/);
+        if (levelMatch) {
+            this.currentAudioLevel = parseInt(levelMatch[1]);
+            this.updateLevelIndicator(this.currentAudioLevel);
+        }
+
+        // Handle file listing
+        if (data.includes('FILE_LIST_START')) {
+            this.audioFiles = []; // Clear existing list
+            this.isReceivingFileList = true;
+        } else if (data.includes('FILE_LIST_END')) {
+            this.isReceivingFileList = false;
+            this.updateFileList();
+        } else if (this.isReceivingFileList && data.startsWith('FILE:')) {
+            // Parse file info: FILE:path:size
+            const parts = data.split(':');
+            if (parts.length >= 3) {
+                const filePath = parts[1];
+                const fileSize = parseInt(parts[2]) || 0;
+                this.addFileFromList(filePath, fileSize);
+            }
+        }
+
+        // Handle file data transfer
+        if (data.startsWith('FILE_DATA_START:')) {
+            // Parse: FILE_DATA_START:filename:size
+            const parts = data.split(':');
+            if (parts.length >= 3) {
+                this.currentDownload = {
+                    filename: parts[1],
+                    size: parseInt(parts[2]),
+                    data: new Uint8Array(0)
+                };
+                console.log(`Starting download: ${this.currentDownload.filename}`);
+            }
+        } else if (data.includes('FILE_DATA_END')) {
+            if (this.currentDownload) {
+                this.processDownloadedFile();
+            }
         }
 
         // Parse specific messages from your ESP32
@@ -85,6 +231,69 @@ class ESP32SerialCommunicator {
             this.onRecordingCompleted(data);
         } else if (data.includes('5V over USB detected!')) {
             this.onUSBPowerDetected();
+        }
+    }
+
+    // Add file from ESP32 file list
+    addFileFromList(filePath, fileSize) {
+        const filename = filePath.split('/').pop(); // Get just the filename
+        const fileInfo = {
+            name: filename,
+            path: filePath,
+            timestamp: 'From ESP32',
+            size: this.formatFileSize(fileSize)
+        };
+        
+        this.audioFiles.push(fileInfo);
+    }
+
+    // Format file size for display
+    formatFileSize(bytes) {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    // Process downloaded audio file
+    processDownloadedFile() {
+        if (!this.currentDownload) return;
+        
+        try {
+            // Create blob from downloaded data
+            const blob = new Blob([this.currentDownload.data], { type: 'audio/wav' });
+            const url = URL.createObjectURL(blob);
+            
+            // Create download link
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = this.currentDownload.filename;
+            link.style.display = 'none';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            // Clean up
+            URL.revokeObjectURL(url);
+            console.log(`Downloaded: ${this.currentDownload.filename}`);
+            
+        } catch (error) {
+            console.error('Error processing downloaded file:', error);
+        }
+        
+        this.currentDownload = null;
+    }
+
+    // Update the level indicator bar
+    updateLevelIndicator(level) {
+        const indicator = document.getElementById('level-indicator');
+        const valueDisplay = document.getElementById('level-value');
+        
+        if (indicator && valueDisplay) {
+            const percentage = Math.min((level / 2048) * 100, 100);
+            indicator.style.width = percentage + '%';
+            valueDisplay.textContent = level;
         }
     }
 
@@ -135,22 +344,82 @@ class ESP32SerialCommunicator {
     // Event handlers for ESP32 messages
     onRecordingStarted() {
         console.log('ESP32 started recording');
-        // Update UI to show recording status
+        this.isRecording = true;
+        
+        // Add visual indicator
+        const statusElement = document.querySelector('#connection-status');
+        if (statusElement) {
+            statusElement.innerHTML = 'Connected <span class="recording-indicator">● REC</span>';
+        }
     }
 
     onRecordingCompleted(message) {
         console.log('ESP32 completed recording:', message);
+        this.isRecording = false;
+        
+        // Remove recording indicator
+        const statusElement = document.querySelector('#connection-status');
+        if (statusElement) {
+            statusElement.innerHTML = 'Connected';
+        }
+        
         // Extract filename from message if needed
         const filenameMatch = message.match(/=> (.+\.wav)/);
         if (filenameMatch) {
             const filename = filenameMatch[1];
             console.log('Recorded file:', filename);
+            this.addAudioFile(filename);
         }
     }
 
     onUSBPowerDetected() {
         console.log('ESP32 detected USB power');
         // Handle USB power detection
+    }
+
+    // Add a new audio file to the list
+    addAudioFile(filename) {
+        const fileInfo = {
+            name: filename,
+            timestamp: new Date().toLocaleString(),
+            size: 'Unknown' // Could be retrieved from ESP32 if needed
+        };
+        
+        this.audioFiles.unshift(fileInfo); // Add to beginning of array
+        this.updateFileList();
+    }
+
+    // Update the file list display
+    updateFileList() {
+        const fileListElement = document.getElementById('file-list');
+        if (!fileListElement) return;
+        
+        if (this.audioFiles.length === 0) {
+            fileListElement.innerHTML = '<p>No recorded files yet. Start recording to see files here.</p>';
+            return;
+        }
+        
+        let html = '';
+        this.audioFiles.forEach((file, index) => {
+            html += `
+                <div class="audio-file-item">
+                    <div class="file-info">
+                        <div class="file-name">${file.name}</div>
+                        <div class="file-details">Recorded: ${file.timestamp} | Size: ${file.size}</div>
+                    </div>
+                    <div class="file-controls">
+                        <button onclick="requestAudioFile('${file.path || file.name}')" title="Download file from ESP32">
+                            📥 Download
+                        </button>
+                        <button onclick="removeFileFromList(${index})" title="Remove from list">
+                            🗑️ Remove
+                        </button>
+                    </div>
+                </div>
+            `;
+        });
+        
+        fileListElement.innerHTML = html;
     }
 }
 
@@ -206,6 +475,35 @@ async function getSDCardInfo() {
     }
 }
 
+// Audio file management functions
+async function refreshAudioList() {
+    try {
+        await esp32.sendCommand('LIST_FILES');
+    } catch (error) {
+        console.error('Failed to refresh audio list:', error);
+    }
+}
+
+function clearAudioDisplay() {
+    esp32.audioFiles = [];
+    esp32.updateFileList();
+    console.log('Audio file list cleared');
+}
+
+async function requestAudioFile(filename) {
+    try {
+        await esp32.sendCommand(`GET_FILE:${filename}`);
+        console.log(`Requested file: ${filename}`);
+    } catch (error) {
+        console.error('Failed to request file:', error);
+    }
+}
+
+function removeFileFromList(index) {
+    esp32.audioFiles.splice(index, 1);
+    esp32.updateFileList();
+}
+
 // Initialize when page loads
 document.addEventListener('DOMContentLoaded', function() {
     // Check Web Serial support
@@ -215,6 +513,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     console.log('ESP32 Serial Communicator initialized');
+    
+    // Initialize the file list display
+    esp32.updateFileList();
     
     // You can add auto-connect logic here if needed
     // Or wait for user to click connect button

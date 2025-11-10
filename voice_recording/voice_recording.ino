@@ -3,12 +3,12 @@
 #include "SD.h"
 
 #define SLEEP_TIME 500    // in microseconds
-#define RECORDING_LENGTH 1                // in seconds 
+#define RECORDING_LENGTH 10                // in seconds 
 #define THRESHOLD_SAMPLES 5               // amount of samples that are used to determine if i am speaking
 
 const uint32_t SAMPLERATE = 16000;
 const byte ledPin = BUILTIN_LED;
-const byte USBPin = 9;
+const byte USBPin = D0;
 int recording_threshold = 512;    // threshold for activating recording, gets set through webserver and manual calibration
 
 I2SClass i2s;
@@ -32,7 +32,7 @@ void recordAudio() {
   }
 
   digitalWrite(ledPin, HIGH);
-  Serial.print("RECORDING ... ");
+  Serial.print("RECORDING ... \n");
   wav_buffer = i2s.recordWAV(RECORDING_LENGTH, &wav_size);
 
   sprintf(filename, "/directory_%d/audio_%d.wav", dir_cnt, file_cnt++);
@@ -90,6 +90,13 @@ void processSerialCommand(String command) {
     Serial.printf("Used space: %lluMB\n", SD.usedBytes() / (1024 * 1024));
     Serial.printf("Free space: %lluMB\n", (SD.totalBytes() - SD.usedBytes()) / (1024 * 1024));
   }
+  else if (command == "LIST_FILES") {
+    listAudioFiles();
+  }
+  else if (command.startsWith("GET_FILE:")) {
+    String filename = command.substring(9);
+    sendAudioFile(filename);
+  }
   else if (command == "GET_THRESHOLD") {
     Serial.printf("Current threshold: %d\n", recording_threshold);
   }
@@ -103,7 +110,57 @@ void processSerialCommand(String command) {
   }
 }
 
+void listAudioFiles() {
+  Serial.println("FILE_LIST_START");
+  
+  // List files in all directories
+  for (int dir_cnt = 0; dir_cnt < 1024; dir_cnt++) {
+    char dirname[64];
+    sprintf(dirname, "/directory_%d", dir_cnt);
+    
+    File dir = SD.open(dirname);
+    if (!dir) break; // No more directories
+    
+    if (dir.isDirectory()) {
+      File file = dir.openNextFile();
+      while (file) {
+        if (!file.isDirectory()) {
+          String fullPath = String(dirname) + "/" + String(file.name());
+          Serial.printf("FILE:%s:%lu\n", fullPath.c_str(), file.size());
+        }
+        file = dir.openNextFile();
+      }
+    }
+    dir.close();
+  }
+  
+  Serial.println("FILE_LIST_END");
+}
+
+void sendAudioFile(String filename) {
+  File file = SD.open(filename);
+  if (!file) {
+    Serial.printf("ERROR: File not found: %s\n", filename.c_str());
+    return;
+  }
+  
+  Serial.printf("FILE_DATA_START:%s:%lu\n", filename.c_str(), file.size());
+  
+  // Send file in chunks
+  const size_t CHUNK_SIZE = 64;
+  uint8_t buffer[CHUNK_SIZE];
+  
+  while (file.available()) {
+    size_t bytesRead = file.read(buffer, CHUNK_SIZE);
+    Serial.write(buffer, bytesRead);
+  }
+  
+  file.close();
+  Serial.println("\nFILE_DATA_END");
+}
+
 void setup() {
+  
   Serial.begin(115200);
 
   pinMode(ledPin, OUTPUT);
@@ -119,10 +176,7 @@ void setup() {
     Serial.println("Failed to mount SD Card!");
   }
 
-  Serial.printf("Total space: %lluMB\n", SD.totalBytes() / (1024 * 1024));
-  Serial.printf("Used space: %lluMB\n", SD.usedBytes() / (1024 * 1024));
-
-  Serial.println("ESP32 Voice Recorder Ready - Send commands via Serial");
+  Serial.println("ESP32 Voice Recorder Ready");
   delay(500);
 }
 

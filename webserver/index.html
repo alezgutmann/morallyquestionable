@@ -35,6 +35,30 @@
             </div>
         </div>
 
+        <div class="audio-section">
+            <h2>Live Audio Display</h2>
+            <div class="audio-controls">
+                <button onclick="refreshAudioList()">Refresh Audio List</button>
+                <button onclick="clearAudioDisplay()">Clear Display</button>
+            </div>
+            
+            <div class="audio-visualization">
+                <canvas id="audioCanvas" width="600" height="200"></canvas>
+                <div class="audio-info">
+                    <span>Recording Level: </span>
+                    <div class="level-bar">
+                        <div id="level-indicator"></div>
+                    </div>
+                    <span id="level-value">0</span>
+                </div>
+            </div>
+            
+            <div class="recorded-files">
+                <h3>Recorded Audio Files</h3>
+                <div id="file-list"></div>
+            </div>
+        </div>
+
         <div class="output-section">
             <h2>Output</h2>
             <div class="ausgabe"></div>
