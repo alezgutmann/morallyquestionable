@@ -25,25 +25,55 @@
             <div class="buttons">
                 <button onclick="triggerRecording()">Trigger Recording</button>
                 <button onclick="getSDCardInfo()">Get SD Card Info</button>
+                <button onclick="getStatus()">Get Status</button>
             </div>
             
             <div class="threshold-control">
                 <label for="threshold">Recording Threshold:</label>
-                <input type="range" id="threshold" min="100" max="2000" value="512">
+                <input type="range" id="threshold" min="100" max="4096" value="512">
                 <span id="threshold-value">512</span>
                 <button onclick="setThreshold()">Set Threshold</button>
+                <button onclick="getThreshold()">Read from ESP32</button>
             </div>
+        </div>
+
+        <div class="recorder-status-section">
+            <h2>Recorder Status (Architektur)</h2>
+            <div class="status-grid">
+                <div class="status-item">
+                    <span class="status-label">current_dir_number:</span>
+                    <span id="current-dir" class="status-value">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">current_rec_number:</span>
+                    <span id="current-rec" class="status-value">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">new_rec_flag:</span>
+                    <span id="new-rec-flag" class="status-value">-</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">USB verbunden:</span>
+                    <span id="usb-status" class="status-value">-</span>
+                </div>
+            </div>
+            <p class="status-explanation">
+                <strong>new_rec_flag:</strong> 
+                <span class="nrf-new">1 = Neues Recording</span> | 
+                <span class="nrf-cont">0 = Fortsetzung</span>
+            </p>
         </div>
 
         <div class="audio-section">
             <h2>Live Audio Display</h2>
             <div class="audio-controls">
-                <button onclick="refreshAudioList()">Refresh Audio List</button>
-                <button onclick="clearAudioDisplay()">Clear Display</button>
+                <button onclick="startAudioStream()" id="btn-start-stream">Start Live View</button>
+                <button onclick="stopAudioStream()" id="btn-stop-stream">Stop Live View</button>
+                <button onclick="clearWaveform()">Clear Waveform</button>
             </div>
             
             <div class="audio-visualization">
-                <canvas id="audioCanvas" width="600" height="200"></canvas>
+                <canvas id="audioCanvas" width="800" height="250"></canvas>
                 <div class="audio-info">
                     <span>Recording Level: </span>
                     <div class="level-bar">
@@ -55,6 +85,14 @@
             
             <div class="recorded-files">
                 <h3>Recorded Audio Files</h3>
+                <div class="file-controls-top">
+                    <button onclick="refreshAudioList()">Refresh File List</button>
+                    <button onclick="clearAudioDisplay()">Clear List</button>
+                </div>
+                <p class="file-legend">
+                    <span class="legend-new">&#9679; Neues Recording (nrf1)</span>
+                    <span class="legend-cont">&#9679; Fortsetzung (nrf0)</span>
+                </p>
                 <div id="file-list"></div>
             </div>
         </div>

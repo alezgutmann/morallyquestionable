@@ -1,8 +1,108 @@
 body {
-    font-family: Arial, sans-serif;
+    font-family: 'Courier New', Courier, monospace;
     margin: 0;
     padding: 20px;
     background-color: #f5f5f5;
+}
+
+@media (max-width: 600px) {
+    body {
+        padding: 5px;
+    }
+    .container {
+        max-width: 100%;
+        padding: 10px;
+        border-radius: 0;
+        box-shadow: none;
+    }
+    h1 {
+        font-size: 24px;
+        margin-bottom: 15px;
+    }
+    h2 {
+        font-size: 18px;
+        padding-bottom: 5px;
+    }
+    span, div {
+        font-size: 18px;
+    }
+    .status {
+        font-size: 22px;
+    }
+    button {
+        font-size: 18px;
+        padding: 8px 12px;
+        margin: 3px;
+    }
+    .threshold-control {
+        padding: 8px;
+        margin: 10px 0;
+    }
+    #threshold {
+        width: 100px;
+    }
+    .ausgabe {
+        min-height: 80px;
+        font-size: 10px;
+        padding: 8px;
+        max-height: 150px;
+    }
+    .audio-section {
+        margin-bottom: 15px;
+    }
+    .audio-visualization {
+        padding: 8px;
+        margin: 8px 0;
+    }
+    #audioCanvas {
+        margin-bottom: 8px;
+        width: 100%;
+        height: 180px;
+    }
+    .audio-info {
+        flex-direction: column;
+        gap: 5px;
+    }
+    .level-bar {
+        width: 100px;
+        height: 12px;
+    }
+    #level-value {
+        min-width: 30px;
+        font-size: 12px;
+    }
+    .recorded-files {
+        margin-top: 10px;
+    }
+    #file-list {
+        max-height: 120px;
+        padding: 5px;
+    }
+    .audio-file-item {
+        padding: 5px;
+        font-size: 12px;
+    }
+    .file-name {
+        font-size: 14px;
+    }
+    .file-details {
+        font-size: 10px;
+    }
+    .file-controls button {
+        padding: 3px 6px;
+        font-size: 10px;
+    }
+    .waveform {
+        height: 30px;
+        margin-top: 2px;
+    }
+    .recording-indicator {
+        font-size: 14px;
+    }
+}
+
+span, div {
+    font-size: 24px;
 }
 
 .container {
@@ -32,7 +132,7 @@ h2 {
 
 .status {
     margin: 15px 0;
-    font-size: 16px;
+    font-size: 32px;
     font-weight: bold;
 }
 
@@ -56,7 +156,7 @@ button {
     margin: 5px;
     border-radius: 5px;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 30px;
     transition: background-color 0.3s;
 }
 
@@ -123,10 +223,37 @@ button:disabled {
 }
 
 #audioCanvas {
-    border: 2px solid #dee2e6;
-    background: #ffffff;
-    border-radius: 5px;
+    border: 2px solid #1a1a2e;
+    background: #1a1a2e;
+    border-radius: 8px;
     margin-bottom: 15px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    max-width: 100%;
+}
+
+.file-controls-top {
+    margin-bottom: 10px;
+}
+
+.file-controls-top button {
+    font-size: 14px;
+    padding: 8px 15px;
+}
+
+#btn-start-stream {
+    background: #28a745;
+}
+
+#btn-start-stream:hover {
+    background: #218838;
+}
+
+#btn-stop-stream {
+    background: #dc3545;
+}
+
+#btn-stop-stream:hover {
+    background: #c82333;
 }
 
 .audio-info {
@@ -242,4 +369,106 @@ button:disabled {
 @keyframes blink {
     0%, 50% { opacity: 1; }
     51%, 100% { opacity: 0.3; }
+}
+
+/* Recorder Status Section */
+.recorder-status-section {
+    margin-bottom: 30px;
+    padding: 20px;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    border-radius: 10px;
+    color: white;
+}
+
+.recorder-status-section h2 {
+    color: #fff;
+    border-bottom-color: #3a3a5e;
+    margin-top: 0;
+}
+
+.status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 15px;
+    margin: 20px 0;
+}
+
+.status-item {
+    background: rgba(255,255,255,0.1);
+    padding: 15px;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+}
+
+.status-label {
+    font-size: 12px;
+    color: #aaa;
+    margin-bottom: 5px;
+}
+
+.status-value {
+    font-size: 24px;
+    font-weight: bold;
+    color: #28a745;
+}
+
+.status-explanation {
+    font-size: 14px;
+    color: #aaa;
+    margin-top: 10px;
+}
+
+.nrf-new {
+    color: #28a745;
+    font-weight: bold;
+}
+
+.nrf-cont {
+    color: #17a2b8;
+    font-weight: bold;
+}
+
+/* File Legend */
+.file-legend {
+    font-size: 12px;
+    color: #666;
+    margin: 10px 0;
+}
+
+.legend-new {
+    color: #28a745;
+    margin-right: 15px;
+}
+
+.legend-cont {
+    color: #17a2b8;
+}
+
+/* File item styling for new_rec_flag */
+.audio-file-item.new-recording {
+    border-left: 4px solid #28a745;
+}
+
+.audio-file-item.continuation {
+    border-left: 4px solid #17a2b8;
+}
+
+.nrf-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 10px;
+    font-weight: bold;
+    margin-left: 8px;
+}
+
+.nrf-badge.new {
+    background: #28a745;
+    color: white;
+}
+
+.nrf-badge.cont {
+    background: #17a2b8;
+    color: white;
 }

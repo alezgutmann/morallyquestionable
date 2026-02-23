@@ -7,6 +7,12 @@ class ESP32SerialCommunicator {
         this.audioFiles = [];
         this.isRecording = false;
         this.currentAudioLevel = 0;
+        this.isStreaming = false;
+        this.streamInterval = null;
+        
+        // Audio waveform buffer for visualization
+        this.waveformBuffer = [];
+        this.maxWaveformSamples = 200; // Number of samples to display
         
         // Initialize audio visualization
         this.initializeAudioVisualization();
@@ -38,13 +44,14 @@ class ESP32SerialCommunicator {
         
         const width = this.canvas.width;
         const height = this.canvas.height;
+        const centerY = height / 2;
         
         // Clear canvas
-        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillStyle = '#1a1a2e';
         this.ctx.fillRect(0, 0, width, height);
         
         // Draw grid lines
-        this.ctx.strokeStyle = '#e9ecef';
+        this.ctx.strokeStyle = '#2a2a4e';
         this.ctx.lineWidth = 1;
         
         // Horizontal grid lines
@@ -65,19 +72,134 @@ class ESP32SerialCommunicator {
             this.ctx.stroke();
         }
         
-        // Draw current audio level
+        // Draw center line
+        this.ctx.strokeStyle = '#3a3a5e';
+        this.ctx.lineWidth = 1;
+        this.ctx.beginPath();
+        this.ctx.moveTo(0, centerY);
+        this.ctx.lineTo(width, centerY);
+        this.ctx.stroke();
+        
+        // Draw waveform from buffer
+        if (this.waveformBuffer.length > 1) {
+            const stepX = width / this.maxWaveformSamples;
+            
+            // Draw filled waveform area
+            this.ctx.beginPath();
+            this.ctx.moveTo(0, centerY);
+            
+            for (let i = 0; i < this.waveformBuffer.length; i++) {
+                const x = i * stepX;
+                const normalizedLevel = Math.min(this.waveformBuffer[i] / 4096, 1);
+                const y = centerY - (normalizedLevel * (height / 2 - 10));
+                
+                if (i === 0) {
+                    this.ctx.moveTo(x, y);
+                } else {
+                    this.ctx.lineTo(x, y);
+                }
+            }
+            
+            // Mirror the waveform (bottom half)
+            for (let i = this.waveformBuffer.length - 1; i >= 0; i--) {
+                const x = i * stepX;
+                const normalizedLevel = Math.min(this.waveformBuffer[i] / 4096, 1);
+                const y = centerY + (normalizedLevel * (height / 2 - 10));
+                this.ctx.lineTo(x, y);
+            }
+            
+            this.ctx.closePath();
+            
+            // Gradient fill for waveform
+            const gradient = this.ctx.createLinearGradient(0, 0, 0, height);
+            gradient.addColorStop(0, this.isRecording ? 'rgba(220, 53, 69, 0.8)' : 'rgba(40, 167, 69, 0.8)');
+            gradient.addColorStop(0.5, this.isRecording ? 'rgba(220, 53, 69, 0.3)' : 'rgba(40, 167, 69, 0.3)');
+            gradient.addColorStop(1, this.isRecording ? 'rgba(220, 53, 69, 0.8)' : 'rgba(40, 167, 69, 0.8)');
+            this.ctx.fillStyle = gradient;
+            this.ctx.fill();
+            
+            // Draw waveform outline
+            this.ctx.strokeStyle = this.isRecording ? '#dc3545' : '#28a745';
+            this.ctx.lineWidth = 2;
+            this.ctx.beginPath();
+            for (let i = 0; i < this.waveformBuffer.length; i++) {
+                const x = i * stepX;
+                const normalizedLevel = Math.min(this.waveformBuffer[i] / 4096, 1);
+                const y = centerY - (normalizedLevel * (height / 2 - 10));
+                
+                if (i === 0) {
+                    this.ctx.moveTo(x, y);
+                } else {
+                    this.ctx.lineTo(x, y);
+                }
+            }
+            this.ctx.stroke();
+            
+            // Bottom outline
+            this.ctx.beginPath();
+            for (let i = 0; i < this.waveformBuffer.length; i++) {
+                const x = i * stepX;
+                const normalizedLevel = Math.min(this.waveformBuffer[i] / 4096, 1);
+                const y = centerY + (normalizedLevel * (height / 2 - 10));
+                
+                if (i === 0) {
+                    this.ctx.moveTo(x, y);
+                } else {
+                    this.ctx.lineTo(x, y);
+                }
+            }
+            this.ctx.stroke();
+        }
+        
+        // Draw threshold lines (upper and lower)
+        const thresholdElement = document.getElementById('threshold');
+        if (thresholdElement) {
+            const threshold = parseInt(thresholdElement.value);
+            const normalizedThreshold = Math.min(threshold / 4096, 1);
+            const thresholdYTop = centerY - (normalizedThreshold * (height / 2 - 10));
+            const thresholdYBottom = centerY + (normalizedThreshold * (height / 2 - 10));
+            
+            this.ctx.strokeStyle = '#ffc107';
+            this.ctx.lineWidth = 2;
+            this.ctx.setLineDash([5, 5]);
+            
+            // Upper threshold line
+            this.ctx.beginPath();
+            this.ctx.moveTo(0, thresholdYTop);
+            this.ctx.lineTo(width, thresholdYTop);
+            this.ctx.stroke();
+            
+            // Lower threshold line
+            this.ctx.beginPath();
+            this.ctx.moveTo(0, thresholdYBottom);
+            this.ctx.lineTo(width, thresholdYBottom);
+            this.ctx.stroke();
+            
+            this.ctx.setLineDash([]);
+            
+            // Threshold label
+            this.ctx.fillStyle = '#ffc107';
+            this.ctx.font = 'bold 12px Arial';
+            this.ctx.fillText(`Threshold: ${threshold}`, 10, thresholdYTop - 8);
+        }
+        
+        // Draw current level indicator on the right
         if (this.currentAudioLevel > 0) {
-            const normalizedLevel = Math.min(this.currentAudioLevel / 2048, 1); // Normalize to 0-1
-            const barHeight = normalizedLevel * height;
+            const normalizedLevel = Math.min(this.currentAudioLevel / 4096, 1);
+            const barHeight = normalizedLevel * (height / 2 - 10);
             
-            // Draw level bar
+            // Level bar background
+            this.ctx.fillStyle = '#2a2a4e';
+            this.ctx.fillRect(width - 35, 10, 25, height - 20);
+            
+            // Level bar (centered)
             this.ctx.fillStyle = this.isRecording ? '#dc3545' : '#28a745';
-            this.ctx.fillRect(width - 50, height - barHeight, 40, barHeight);
+            this.ctx.fillRect(width - 35, centerY - barHeight, 25, barHeight * 2);
             
-            // Draw level text
-            this.ctx.fillStyle = '#333';
-            this.ctx.font = '12px Arial';
-            this.ctx.fillText(`${this.currentAudioLevel}`, width - 45, height - barHeight - 5);
+            // Level text
+            this.ctx.fillStyle = '#fff';
+            this.ctx.font = '10px Arial';
+            this.ctx.fillText(`${this.currentAudioLevel}`, width - 33, 25);
         }
         
         // Draw recording indicator
@@ -87,26 +209,66 @@ class ESP32SerialCommunicator {
             this.ctx.fillText('● RECORDING', 10, 25);
         }
         
-        // Draw threshold line
-        const thresholdElement = document.getElementById('threshold');
-        if (thresholdElement) {
-            const threshold = parseInt(thresholdElement.value);
-            const thresholdY = height - (threshold / 2048) * height;
-            
-            this.ctx.strokeStyle = '#ffc107';
-            this.ctx.lineWidth = 2;
-            this.ctx.setLineDash([5, 5]);
-            this.ctx.beginPath();
-            this.ctx.moveTo(0, thresholdY);
-            this.ctx.lineTo(width, thresholdY);
-            this.ctx.stroke();
-            this.ctx.setLineDash([]);
-            
-            // Threshold label
-            this.ctx.fillStyle = '#ffc107';
+        // Draw streaming indicator
+        if (this.isStreaming) {
+            this.ctx.fillStyle = '#17a2b8';
+            this.ctx.font = 'bold 12px Arial';
+            this.ctx.fillText('● LIVE', width - 80, 25);
+        } else if (this.isConnected) {
+            this.ctx.fillStyle = '#6c757d';
             this.ctx.font = '12px Arial';
-            this.ctx.fillText(`Threshold: ${threshold}`, 10, thresholdY - 5);
+            this.ctx.fillText('○ PAUSED', width - 80, 25);
         }
+    }
+    
+    // Add sample to waveform buffer
+    addWaveformSample(level) {
+        this.waveformBuffer.push(level);
+        
+        // Remove oldest samples if buffer is full
+        while (this.waveformBuffer.length > this.maxWaveformSamples) {
+            this.waveformBuffer.shift();
+        }
+    }
+    
+    // Start streaming audio levels from ESP32
+    async startStreaming() {
+        if (!this.isConnected) {
+            console.log('Not connected to ESP32');
+            return;
+        }
+        
+        this.isStreaming = true;
+        await this.sendCommand('START_STREAM');
+        
+        // Request audio levels at regular intervals
+        this.streamInterval = setInterval(async () => {
+            if (this.isConnected && this.isStreaming) {
+                try {
+                    await this.sendCommand('GET_LEVEL');
+                } catch (error) {
+                    console.error('Error requesting level:', error);
+                }
+            }
+        }, 50); // 20 samples per second
+        
+        console.log('Audio streaming started');
+    }
+    
+    // Stop streaming audio levels
+    async stopStreaming() {
+        this.isStreaming = false;
+        
+        if (this.streamInterval) {
+            clearInterval(this.streamInterval);
+            this.streamInterval = null;
+        }
+        
+        if (this.isConnected) {
+            await this.sendCommand('STOP_STREAM');
+        }
+        
+        console.log('Audio streaming stopped');
     }
 
     // Check if Web Serial API is supported
@@ -141,6 +303,14 @@ class ESP32SerialCommunicator {
             
             // Start reading data
             this.startReading();
+            
+            // Auto-query status after connection (with small delay for ESP32 to be ready)
+            setTimeout(async () => {
+                if (this.isConnected) {
+                    await this.sendCommand('STATUS');
+                    await this.sendCommand('GET_THRESHOLD');
+                }
+            }, 500);
             
             return true;
         } catch (error) {
@@ -187,6 +357,11 @@ class ESP32SerialCommunicator {
         if (levelMatch) {
             this.currentAudioLevel = parseInt(levelMatch[1]);
             this.updateLevelIndicator(this.currentAudioLevel);
+            
+            // Add to waveform buffer for visualization
+            if (this.isStreaming) {
+                this.addWaveformSample(this.currentAudioLevel);
+            }
         }
 
         // Handle file listing
@@ -225,12 +400,36 @@ class ESP32SerialCommunicator {
         }
 
         // Parse specific messages from your ESP32
-        if (data.includes('RECORDING')) {
+        if (data.includes('RECORDING ...')) {
             this.onRecordingStarted();
-        } else if (data.includes('COMPLETE')) {
+        } else if (data.includes('COMPLETE =>')) {
             this.onRecordingCompleted(data);
+            // Parse dir/rec from completed filename
+            const pathMatch = data.match(/dir(\d+)\/rec(\d+)_nrf(\d)/);
+            if (pathMatch) {
+                const dirNum = parseInt(pathMatch[1]);
+                const recNum = parseInt(pathMatch[2]);
+                const nrf = pathMatch[3] === '1';
+                this.updateRecorderStatus(dirNum, recNum + 1, false, true); // Nach Recording: nrf wird false
+            }
         } else if (data.includes('5V over USB detected!')) {
             this.onUSBPowerDetected();
+        }
+        
+        // Parse threshold response
+        const thresholdMatch = data.match(/(?:Current )?[Tt]hreshold:?\s*(\d+)/);
+        if (thresholdMatch) {
+            const threshold = parseInt(thresholdMatch[1]);
+            const thresholdSlider = document.getElementById('threshold');
+            const thresholdValue = document.getElementById('threshold-value');
+            if (thresholdSlider) thresholdSlider.value = threshold;
+            if (thresholdValue) thresholdValue.textContent = threshold;
+        }
+        
+        // Parse USB status
+        const usbMatch = data.match(/USB Power: (\w+)/);
+        if (usbMatch) {
+            this.updateRecorderStatus(undefined, undefined, undefined, usbMatch[1] === 'Connected');
         }
     }
 
@@ -317,6 +516,11 @@ class ESP32SerialCommunicator {
     // Disconnect from ESP32
     async disconnect() {
         try {
+            // Stop streaming first
+            if (this.isStreaming) {
+                await this.stopStreaming();
+            }
+            
             this.isConnected = false;
             
             if (this.reader) {
@@ -401,18 +605,28 @@ class ESP32SerialCommunicator {
         
         let html = '';
         this.audioFiles.forEach((file, index) => {
+            // Parse new_rec_flag from filename (e.g., rec0_nrf1.wav)
+            const nrfMatch = file.name.match(/_nrf(\d)/);
+            const isNewRecording = nrfMatch ? nrfMatch[1] === '1' : null;
+            const itemClass = isNewRecording === true ? 'new-recording' : 
+                              isNewRecording === false ? 'continuation' : '';
+            const nrfBadge = isNewRecording === true ? 
+                '<span class="nrf-badge new">NEU</span>' :
+                isNewRecording === false ? 
+                '<span class="nrf-badge cont">FORTS.</span>' : '';
+            
             html += `
-                <div class="audio-file-item">
+                <div class="audio-file-item ${itemClass}">
                     <div class="file-info">
-                        <div class="file-name">${file.name}</div>
-                        <div class="file-details">Recorded: ${file.timestamp} | Size: ${file.size}</div>
+                        <div class="file-name">${file.name}${nrfBadge}</div>
+                        <div class="file-details">Path: ${file.path || '-'} | Size: ${file.size}</div>
                     </div>
                     <div class="file-controls">
                         <button onclick="requestAudioFile('${file.path || file.name}')" title="Download file from ESP32">
-                            📥 Download
+                            Download
                         </button>
                         <button onclick="removeFileFromList(${index})" title="Remove from list">
-                            🗑️ Remove
+                            Remove
                         </button>
                     </div>
                 </div>
@@ -420,6 +634,25 @@ class ESP32SerialCommunicator {
         });
         
         fileListElement.innerHTML = html;
+    }
+    
+    // Update recorder status display
+    updateRecorderStatus(dirNum, recNum, nrf, usbConnected) {
+        const dirEl = document.getElementById('current-dir');
+        const recEl = document.getElementById('current-rec');
+        const nrfEl = document.getElementById('new-rec-flag');
+        const usbEl = document.getElementById('usb-status');
+        
+        if (dirEl && dirNum !== undefined) dirEl.textContent = dirNum;
+        if (recEl && recNum !== undefined) recEl.textContent = recNum;
+        if (nrfEl && nrf !== undefined) {
+            nrfEl.textContent = nrf ? '1 (Neues Recording)' : '0 (Fortsetzung)';
+            nrfEl.style.color = nrf ? '#28a745' : '#17a2b8';
+        }
+        if (usbEl && usbConnected !== undefined) {
+            usbEl.textContent = usbConnected ? 'Ja' : 'Nein';
+            usbEl.style.color = usbConnected ? '#28a745' : '#dc3545';
+        }
     }
 }
 
@@ -475,6 +708,22 @@ async function getSDCardInfo() {
     }
 }
 
+async function getStatus() {
+    try {
+        await esp32.sendCommand('STATUS');
+    } catch (error) {
+        console.error('Failed to get status:', error);
+    }
+}
+
+async function getThreshold() {
+    try {
+        await esp32.sendCommand('GET_THRESHOLD');
+    } catch (error) {
+        console.error('Failed to get threshold:', error);
+    }
+}
+
 // Audio file management functions
 async function refreshAudioList() {
     try {
@@ -488,6 +737,33 @@ function clearAudioDisplay() {
     esp32.audioFiles = [];
     esp32.updateFileList();
     console.log('Audio file list cleared');
+}
+
+// Audio streaming functions
+async function startAudioStream() {
+    try {
+        await esp32.startStreaming();
+        document.getElementById('btn-start-stream').disabled = true;
+        document.getElementById('btn-stop-stream').disabled = false;
+    } catch (error) {
+        console.error('Failed to start streaming:', error);
+    }
+}
+
+async function stopAudioStream() {
+    try {
+        await esp32.stopStreaming();
+        document.getElementById('btn-start-stream').disabled = false;
+        document.getElementById('btn-stop-stream').disabled = true;
+    } catch (error) {
+        console.error('Failed to stop streaming:', error);
+    }
+}
+
+function clearWaveform() {
+    esp32.waveformBuffer = [];
+    esp32.currentAudioLevel = 0;
+    console.log('Waveform cleared');
 }
 
 async function requestAudioFile(filename) {

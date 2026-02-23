@@ -13,20 +13,23 @@ int recording_threshold = 512;    // threshold for activating recording, gets se
 
 I2SClass i2s;
 
+// Globale Recorder-Parameter (gemäß Architektur)
+static int current_rec_number = 0;
+static int current_dir_number = 0;
+static bool new_rec_flag = true;  // ist das ein neues recording oder Fortsetzung?
+
 void recordAudio() {
-  static int file_cnt = 0;
-  static int dir_cnt = 0;
   static char filename[64];
   uint8_t *wav_buffer;
   size_t wav_size;
 
-  if(dir_cnt >= 1023)
+  if(current_dir_number >= 1024)
     return;
 
-  if(dir_cnt == 0){
-    sprintf(filename, "/directory_%d", dir_cnt);
+  if(current_dir_number == 0 && current_rec_number == 0){
+    sprintf(filename, "/dir%d", current_dir_number);
     File checking_dir = SD.open(filename);
-    if(!checking_dir) // when /directory_0 doesnt already exist
+    if(!checking_dir) // when /dir0 doesnt already exist
       createDir(SD, filename);
     checking_dir.close();
   }
@@ -35,7 +38,8 @@ void recordAudio() {
   Serial.print("RECORDING ... \n");
   wav_buffer = i2s.recordWAV(RECORDING_LENGTH, &wav_size);
 
-  sprintf(filename, "/directory_%d/audio_%d.wav", dir_cnt, file_cnt++);
+  // Namenskonvention: /dir{current_dir_number}/rec{current_rec_number}_nrf{new_rec_flag}.wav
+  sprintf(filename, "/dir%d/rec%d_nrf%d.wav", current_dir_number, current_rec_number, new_rec_flag ? 1 : 0);
   File file = SD.open(filename, FILE_WRITE);
   file.write(wav_buffer, wav_size);
   file.close();
@@ -43,10 +47,16 @@ void recordAudio() {
   Serial.printf("COMPLETE => %s\n", filename);
   digitalWrite(ledPin, LOW);
 
-  if(file_cnt >= 1023){
-    file_cnt = 0;
-    sprintf(filename, "/directory_%d", dir_cnt++);
-    createDir(SD, filename);
+  current_rec_number++;
+  new_rec_flag = false;  // Nächste Aufnahme ist Fortsetzung
+
+  if(current_rec_number >= 1024){
+    current_rec_number = 0;
+    current_dir_number++;
+    if(current_dir_number < 1024){
+      sprintf(filename, "/dir%d", current_dir_number);
+      createDir(SD, filename);
+    }
   }
 
 }
@@ -105,6 +115,19 @@ void processSerialCommand(String command) {
     Serial.printf("Threshold: %d\n", recording_threshold);
     Serial.printf("USB Power: %s\n", digitalRead(USBPin) == HIGH ? "Connected" : "Disconnected");
   }
+  else if (command == "START_STREAM") {
+    Serial.println("STREAM_STARTED");
+  }
+  else if (command == "STOP_STREAM") {
+    Serial.println("STREAM_STOPPED");
+  }
+  else if (command == "GET_LEVEL") {
+    // Read current audio level and send it
+    int sample = abs(i2s.read());
+    if (sample != -1 && sample != 1) {
+      Serial.printf("LEVEL:%d\n", sample);
+    }
+  }
   else {
     Serial.println("Unknown command");
   }
@@ -114,9 +137,9 @@ void listAudioFiles() {
   Serial.println("FILE_LIST_START");
   
   // List files in all directories
-  for (int dir_cnt = 0; dir_cnt < 1024; dir_cnt++) {
+  for (int d = 0; d < 1024; d++) {
     char dirname[64];
-    sprintf(dirname, "/directory_%d", dir_cnt);
+    sprintf(dirname, "/dir%d", d);
     
     File dir = SD.open(dirname);
     if (!dir) break; // No more directories
@@ -184,7 +207,7 @@ void loop() {
   
   
   if ( digitalRead(USBPin) == HIGH){
-    // Serial.println("5V over USB detected!");
+    Serial.println("5V over USB detected!");
     // Check for serial commands
     if (Serial.available()) {
       String command = Serial.readStringUntil('\n');
@@ -192,14 +215,26 @@ void loop() {
     }
   }
   else{
+    Serial.println("Sleep branch taken!");
+    // Sleep für SLEEP_TIME
     esp_sleep_enable_timer_wakeup(SLEEP_TIME);
-    // reading samples, averaging, checking if exceeds threshold
-    int sample;
+    esp_light_sleep_start();
+    
+    // Samples aufnehmen und Durchschnitt berechnen
+    int sample = 0;  // WICHTIG: Initialisieren!
     for (int i = 0; i < THRESHOLD_SAMPLES; i++){
-      sample += i2s.read() / THRESHOLD_SAMPLES; // division for averaging purposes
-      if (sample >= recording_threshold && sample != -1 && sample != 1) {
-        recordAudio();
+      int reading = abs(i2s.read());  // abs() weil Audio-Samples negativ sein können
+      if (reading != 1) {  // -1/1 sind Fehlerwerte
+        sample += reading;
       }
+    }
+    sample /= THRESHOLD_SAMPLES;  // Durchschnitt nach der Schleife
+    
+    // Wurde threshold überschritten?
+    if (sample >= recording_threshold) {
+      recordAudio();
+    } else {
+      new_rec_flag = true;  // Keine Aufnahme -> nächste ist neues Recording
     }
   }
   
