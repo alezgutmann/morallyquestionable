@@ -83,10 +83,13 @@
         <mxCell id="d_WRjj7Hr9JrzCvtTUL0-27" parent="1" style="whiteSpace=wrap;html=1;" value="Samples aufnehmen" vertex="1">
           <mxGeometry height="60" width="120" x="330" y="380" as="geometry" />
         </mxCell>
-        <mxCell id="d_WRjj7Hr9JrzCvtTUL0-40" edge="1" parent="1" source="d_WRjj7Hr9JrzCvtTUL0-33" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;exitX=0.5;exitY=0;exitDx=0;exitDy=0;" target="d_WRjj7Hr9JrzCvtTUL0-27">
+        <mxCell id="d_WRjj7Hr9JrzCvtTUL0-114" edge="1" parent="1" source="d_WRjj7Hr9JrzCvtTUL0-33" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="d_WRjj7Hr9JrzCvtTUL0-4">
           <mxGeometry relative="1" as="geometry">
             <Array as="points">
-              <mxPoint x="640" y="410" />
+              <mxPoint x="640" y="480" />
+              <mxPoint x="495" y="480" />
+              <mxPoint x="495" y="60" />
+              <mxPoint x="390" y="60" />
             </Array>
           </mxGeometry>
         </mxCell>

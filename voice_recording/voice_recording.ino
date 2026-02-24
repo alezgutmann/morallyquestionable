@@ -1,14 +1,21 @@
 #include "ESP_I2S.h"
 #include "FS.h"
 #include "SD.h"
+#include <WiFi.h>
+#include <WebServer.h>
 
 #define SLEEP_TIME 500    // in microseconds
-#define RECORDING_LENGTH 10                // in seconds 
+#define RECORDING_LENGTH 7               // in seconds 
 #define THRESHOLD_SAMPLES 5               // amount of samples that are used to determine if i am speaking
 
 const uint32_t SAMPLERATE = 16000;
 const byte ledPin = BUILTIN_LED;
-const byte USBPin = D0;
+const byte USBPin = D1;
+
+// WiFi AP/Webserver
+const char* ap_ssid = "ESP32-Recorder";
+const char* ap_password = "esp32pass";
+WebServer server(80);
 int recording_threshold = 512;    // threshold for activating recording, gets set through webserver and manual calibration
 
 I2SClass i2s;
@@ -17,6 +24,7 @@ I2SClass i2s;
 static int current_rec_number = 0;
 static int current_dir_number = 0;
 static bool new_rec_flag = true;  // ist das ein neues recording oder Fortsetzung?
+static bool usb_connected = false;
 
 void recordAudio() {
   static char filename[64];
@@ -182,8 +190,54 @@ void sendAudioFile(String filename) {
   Serial.println("\nFILE_DATA_END");
 }
 
+void startWifiAP(){
+  // WiFi Access Point starten
+  WiFi.softAP(ap_ssid, ap_password);
+  IPAddress IP = WiFi.softAPIP();
+  Serial.print("AP IP address: ");
+  Serial.println(IP);
+
+  // Webserver-Routen
+  server.on("/", []() {
+    server.send(200, "text/plain", "ESP32 Voice Recorder Webserver\n\nBefehle:\n/status\n/threshold\n/start_recording\n/set_threshold?value=XXX\n");
+  });
+  server.on("/status", []() {
+    String msg = "ESP32 Voice Recorder Ready\n";
+    msg += "Threshold: " + String(recording_threshold) + "\n";
+    msg += "USB Power: " + String(digitalRead(USBPin) == HIGH ? "Connected" : "Disconnected") + "\n";
+    msg += "current_dir_number: " + String(current_dir_number) + "\n";
+    msg += "current_rec_number: " + String(current_rec_number) + "\n";
+    msg += "new_rec_flag: " + String(new_rec_flag ? 1 : 0) + "\n";
+    server.send(200, "text/plain", msg);
+  });
+  server.on("/threshold", []() {
+    server.send(200, "text/plain", String(recording_threshold));
+  });
+  server.on("/start_recording", []() {
+    recordAudio();
+    server.send(200, "text/plain", "Recording started.");
+  });
+  server.on("/set_threshold", []() {
+    if (server.hasArg("value")) {
+      int t = server.arg("value").toInt();
+      if (t > 0 && t <= 4095) {
+        recording_threshold = t;
+        server.send(200, "text/plain", "Threshold set to: " + String(t));
+        return;
+      }
+    }
+    server.send(400, "text/plain", "Invalid threshold value");
+  });
+  server.begin();
+}
+
+void stopWifiAP(){
+  server.stop(); // Webserver stoppen
+  WiFi.softAPdisconnect(true); // Access Point deaktivieren
+  Serial.println("Webserver und AP gestoppt.");
+}
+
 void setup() {
-  
   Serial.begin(115200);
 
   pinMode(ledPin, OUTPUT);
@@ -205,23 +259,34 @@ void setup() {
 
 void loop() {
   
-  
-  if ( digitalRead(USBPin) == HIGH){
-    Serial.println("5V over USB detected!");
-    // Check for serial commands
+  if (digitalRead(USBPin) == HIGH){
+
+    // Beim ersten Mal USB-Connection den Access-Point starten
+    if (usb_connected == false){
+      usb_connected = true;
+      startWifiAP();
+    }
+
+    server.handleClient();
+    
+    // Serial-Kommandos weiterhin möglich
     if (Serial.available()) {
       String command = Serial.readStringUntil('\n');
       processSerialCommand(command);
+      digitalWrite(ledPin, HIGH);
     }
   }
   else{
+
+    // Sobald USB-Verbindung nicht mehr besteht Access Point runterfahren (aber nur beim ersten Mal)
+    if (usb_connected == true){
+      usb_connected = false;
+      stopWifiAP();
+    }
+
     Serial.println("Sleep branch taken!");
-    // Sleep für SLEEP_TIME
-    esp_sleep_enable_timer_wakeup(SLEEP_TIME);
-    esp_light_sleep_start();
-    
     // Samples aufnehmen und Durchschnitt berechnen
-    int sample = 0;  // WICHTIG: Initialisieren!
+    int sample = 0;
     for (int i = 0; i < THRESHOLD_SAMPLES; i++){
       int reading = abs(i2s.read());  // abs() weil Audio-Samples negativ sein können
       if (reading != 1) {  // -1/1 sind Fehlerwerte
@@ -229,14 +294,14 @@ void loop() {
       }
     }
     sample /= THRESHOLD_SAMPLES;  // Durchschnitt nach der Schleife
-    
     // Wurde threshold überschritten?
     if (sample >= recording_threshold) {
       recordAudio();
     } else {
       new_rec_flag = true;  // Keine Aufnahme -> nächste ist neues Recording
+      //kurz schlafen, da ich gerade nicht spreche
+      esp_sleep_enable_timer_wakeup(SLEEP_TIME);
+      esp_light_sleep_start();
     }
   }
-  
-  
 }
