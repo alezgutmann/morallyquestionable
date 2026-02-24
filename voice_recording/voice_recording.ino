@@ -117,7 +117,7 @@ void recordAudio() {
   if(current_rec_number >= 1024){
     current_rec_number = 0;
     current_dir_number++;
-    if(current_dir_number < 1024){
+    if(current_dir_number < 1023){
       sprintf(filename, "/dir%d", current_dir_number);
       createDir(SD, filename);
     }
@@ -245,6 +245,17 @@ void sendAudioFile(String filename) {
   Serial.println("\nFILE_DATA_END");
 }
 
+// Hilfsfunktion: Datei von SD-Karte über HTTP senden
+void serveFileFromSD(const char* path, const char* contentType) {
+  File file = SD.open(path);
+  if (!file) {
+    server.send(404, "text/plain", "File not found");
+    return;
+  }
+  server.streamFile(file, contentType);
+  file.close();
+}
+
 void startWifiAP(){
   // WiFi Access Point starten
   WiFi.softAP(ap_ssid, ap_password);
@@ -252,38 +263,115 @@ void startWifiAP(){
   Serial.print("AP IP address: ");
   Serial.println(IP);
 
-  // Webserver-Routen
+  // ===== Statische Dateien von SD-Karte =====
   server.on("/", []() {
-    server.send(200, "text/plain", "ESP32 Voice Recorder Webserver\n\nBefehle:\n/status\n/threshold\n/start_recording\n/set_threshold?value=XXX\n");
+    serveFileFromSD("/web/index.html", "text/html");
   });
-  server.on("/status", []() {
-    String msg = "ESP32 Voice Recorder Ready\n";
-    msg += "Threshold: " + String(recording_threshold) + "\n";
-    msg += "USB Power: " + String(digitalRead(USBPin) == HIGH ? "Connected" : "Disconnected") + "\n";
-    msg += "current_dir_number: " + String(current_dir_number) + "\n";
-    msg += "current_rec_number: " + String(current_rec_number) + "\n";
-    msg += "new_rec_flag: " + String(new_rec_flag ? 1 : 0) + "\n";
-    server.send(200, "text/plain", msg);
+  server.on("/style.css", []() {
+    serveFileFromSD("/web/style.css", "text/css");
   });
-  server.on("/threshold", []() {
-    server.send(200, "text/plain", String(recording_threshold));
+  server.on("/main.js", []() {
+    serveFileFromSD("/web/main.js", "application/javascript");
   });
-  server.on("/start_recording", []() {
-    recordAudio();
-    server.send(200, "text/plain", "Recording started.");
+
+  // ===== JSON API Endpoints =====
+  server.on("/api/status", []() {
+    String json = "{";
+    json += "\"threshold\":" + String(recording_threshold) + ",";
+    json += "\"usb_connected\":" + String(digitalRead(USBPin) == HIGH ? "true" : "false") + ",";
+    json += "\"current_dir_number\":" + String(current_dir_number) + ",";
+    json += "\"current_rec_number\":" + String(current_rec_number) + ",";
+    json += "\"new_rec_flag\":" + String(new_rec_flag ? "true" : "false") + ",";
+    json += "\"free_heap\":" + String(ESP.getFreeHeap()) + ",";
+    json += "\"sd_total_mb\":" + String(SD.totalBytes() / (1024 * 1024)) + ",";
+    json += "\"sd_used_mb\":" + String(SD.usedBytes() / (1024 * 1024)) + ",";
+    json += "\"sd_free_mb\":" + String((SD.totalBytes() - SD.usedBytes()) / (1024 * 1024));
+    json += "}";
+    server.send(200, "application/json", json);
   });
-  server.on("/set_threshold", []() {
+
+  server.on("/api/threshold", HTTP_GET, []() {
+    server.send(200, "application/json", "{\"threshold\":" + String(recording_threshold) + "}");
+  });
+
+  server.on("/api/threshold", HTTP_POST, []() {
     if (server.hasArg("value")) {
       int t = server.arg("value").toInt();
       if (t > 0 && t <= 4095) {
         recording_threshold = t;
-        server.send(200, "text/plain", "Threshold set to: " + String(t));
+        server.send(200, "application/json", "{\"ok\":true,\"threshold\":" + String(t) + "}");
         return;
       }
     }
-    server.send(400, "text/plain", "Invalid threshold value");
+    server.send(400, "application/json", "{\"ok\":false,\"error\":\"Invalid threshold (1-4095)\"}");
   });
+
+  server.on("/api/record", HTTP_POST, []() {
+    // Achtung: blockiert fuer RECORDING_LENGTH Sekunden!
+    recordAudio();
+    String json = "{\"ok\":true,";
+    json += "\"current_dir_number\":" + String(current_dir_number) + ",";
+    json += "\"current_rec_number\":" + String(current_rec_number) + ",";
+    json += "\"new_rec_flag\":" + String(new_rec_flag ? "true" : "false");
+    json += "}";
+    server.send(200, "application/json", json);
+  });
+
+  server.on("/api/level", []() {
+    int sample = 0;
+    for (int i = 0; i < THRESHOLD_SAMPLES; i++){
+      int reading = abs(i2s.read());
+      if (reading != 1) {
+        sample += reading;
+      }
+    }
+    sample /= THRESHOLD_SAMPLES;
+    server.send(200, "application/json", "{\"level\":" + String(sample) + "}");
+  });
+
+  server.on("/api/files", []() {
+    String json = "[";
+    bool first = true;
+    for (int d = 0; d < 1024; d++) {
+      char dirname[64];
+      sprintf(dirname, "/dir%d", d);
+      File dir = SD.open(dirname);
+      if (!dir) break;
+      if (dir.isDirectory()) {
+        File file = dir.openNextFile();
+        while (file) {
+          if (!file.isDirectory()) {
+            if (!first) json += ",";
+            first = false;
+            json += "{\"path\":\"" + String(dirname) + "/" + String(file.name()) + "\",";
+            json += "\"size\":" + String(file.size()) + "}";
+          }
+          file = dir.openNextFile();
+        }
+      }
+      dir.close();
+    }
+    json += "]";
+    server.send(200, "application/json", json);
+  });
+
+  server.on("/api/download", []() {
+    if (!server.hasArg("path")) {
+      server.send(400, "application/json", "{\"error\":\"Missing path parameter\"}");
+      return;
+    }
+    String path = server.arg("path");
+    File file = SD.open(path);
+    if (!file) {
+      server.send(404, "application/json", "{\"error\":\"File not found\"}");
+      return;
+    }
+    server.streamFile(file, "audio/wav");
+    file.close();
+  });
+
   server.begin();
+  Serial.println("Webserver gestartet auf http://192.168.4.1");
 }
 
 void stopWifiAP(){

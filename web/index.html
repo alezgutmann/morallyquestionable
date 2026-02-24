@@ -10,13 +10,14 @@
         <h1>ESP32 Voice Recording Controller</h1>
         
         <div class="connection-section">
-            <h2>Connection</h2>
+            <h2>Verbindung</h2>
+            <p class="wifi-hint">Verbinde dich mit dem WLAN <strong>ESP32-Recorder</strong> (Passwort: <code>esp32pass</code>)</p>
             <div class="status">
                 Status: <span id="connection-status" class="disconnected">Disconnected</span>
             </div>
             <div class="buttons">
-                <button onclick="connectToESP32()">Connect to ESP32</button>
-                <button onclick="disconnectFromESP32()">Disconnect</button>
+                <button onclick="connectToESP32()">Verbinden</button>
+                <button onclick="disconnectFromESP32()">Trennen</button>
             </div>
         </div>
 
@@ -104,16 +105,5 @@
     </div>
 
     <script src="main.js"></script>
-    <script>
-        // Update threshold display
-        document.getElementById('threshold').addEventListener('input', function() {
-            document.getElementById('threshold-value').textContent = this.value;
-        });
-
-        function setThreshold() {
-            const threshold = document.getElementById('threshold').value;
-            setRecordingThreshold(threshold);
-        }
-    </script>
 </body>
 </html>
