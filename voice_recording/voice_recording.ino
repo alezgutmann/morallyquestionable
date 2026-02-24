@@ -43,16 +43,72 @@ void recordAudio() {
   }
 
   digitalWrite(ledPin, HIGH);
-  Serial.print("RECORDING ... \n");
+  Serial.println("RECORDING ... ");
+  Serial.printf("Free heap before recording: %d bytes\n", ESP.getFreeHeap());
+  
+  // Calculate expected buffer size for debugging
+  size_t expected_size = RECORDING_LENGTH * SAMPLERATE * 2 + 44; // 16-bit samples + WAV header
+  Serial.printf("Expected WAV size: %d bytes\n", expected_size);
+  
+  // Try recording with detailed debugging
+  Serial.printf("Calling i2s.recordWAV(%d seconds, %d Hz)...\n", RECORDING_LENGTH, SAMPLERATE);
+  
+  unsigned long start_time = millis();
   wav_buffer = i2s.recordWAV(RECORDING_LENGTH, &wav_size);
+  unsigned long end_time = millis();
+  
+  Serial.printf("Recording took %lu ms\n", end_time - start_time);
+  Serial.printf("Returned buffer: %p, size: %d\n", (void*)wav_buffer, wav_size);
+
+  if (wav_buffer == NULL) {
+    Serial.println("ERROR: recordWAV returned NULL buffer");
+    Serial.printf("Free heap after failed recording: %d bytes\n", ESP.getFreeHeap());
+    digitalWrite(ledPin, LOW);
+    return;
+  }
+  
+  if (wav_size == 0) {
+    Serial.println("ERROR: recordWAV returned empty buffer (size = 0)");
+    free(wav_buffer);
+    digitalWrite(ledPin, LOW);
+    return;
+  }
+
+  // Check if the buffer contains actual audio data (not all zeros)
+  bool has_audio = false;
+  for(int i = 44; i < min((int)wav_size, 100); i++) { // Skip WAV header, check first 56 bytes
+    if(wav_buffer[i] != 0) {
+      has_audio = true;
+      break;
+    }
+  }
+  
+  if(!has_audio) {
+    Serial.println("WARNING: Buffer seems to contain only silence/zeros");
+  } else {
+    Serial.println("Buffer contains audio data");
+  }
 
   // Namenskonvention: /dir{current_dir_number}/rec{current_rec_number}_nrf{new_rec_flag}.wav
   sprintf(filename, "/dir%d/rec%d_nrf%d.wav", current_dir_number, current_rec_number, new_rec_flag ? 1 : 0);
   File file = SD.open(filename, FILE_WRITE);
-  file.write(wav_buffer, wav_size);
+  if (!file) {
+    Serial.printf("ERROR: Failed to create file %s\n", filename);
+    free(wav_buffer);
+    digitalWrite(ledPin, LOW);
+    return;
+  }
+  
+  size_t bytesWritten = file.write(wav_buffer, wav_size);
   file.close();
   free(wav_buffer);
-  Serial.printf("COMPLETE => %s\n", filename);
+  
+  Serial.printf("COMPLETE => %s (Written: %d/%d bytes)\n", filename, bytesWritten, wav_size);
+  
+  if (bytesWritten != wav_size) {
+    Serial.println("WARNING: Not all data was written to file!");
+  }
+  
   digitalWrite(ledPin, LOW);
 
   current_rec_number++;
@@ -66,7 +122,6 @@ void recordAudio() {
       createDir(SD, filename);
     }
   }
-
 }
 
 void createDir(fs::FS &fs, const char *path) {
@@ -239,21 +294,65 @@ void stopWifiAP(){
 
 void setup() {
   Serial.begin(115200);
+  delay(1000); // Give serial time to initialize
 
   pinMode(ledPin, OUTPUT);
   pinMode(USBPin, INPUT);
 
+  // Initialize I2S with detailed error checking
+  Serial.println("Initializing I2S...");
   i2s.setPinsPdmRx(42, 41);
-  if (!i2s.begin(I2S_MODE_PDM_RX, SAMPLERATE,
-                 I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO)) {
-    Serial.println("Can't find microphone!");
+  
+  bool i2s_success = i2s.begin(I2S_MODE_PDM_RX, SAMPLERATE,
+                               I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_MONO);
+  
+  if (!i2s_success) {
+    Serial.println("ERROR: Failed to initialize I2S!");
+    Serial.println("Check:");
+    Serial.println("- Microphone connections (pins 42, 41)");
+    Serial.println("- Power supply to microphone");
+    Serial.println("- Microphone compatibility");
+    while(1) { // Stop execution
+      digitalWrite(ledPin, HIGH);
+      delay(200);
+      digitalWrite(ledPin, LOW);
+      delay(200);
+    }
+  } else {
+    Serial.println("I2S initialized successfully");
   }
 
+  // Test I2S by reading a few samples
+  Serial.println("Testing microphone...");
+  for(int i = 0; i < 5; i++) {
+    int sample = i2s.read();
+    Serial.printf("Sample %d: %d\n", i, sample);
+    delay(100);
+  }
+
+  // Initialize SD card
+  Serial.println("Initializing SD card...");
   if (!SD.begin(21)) {
-    Serial.println("Failed to mount SD Card!");
+    Serial.println("ERROR: Failed to mount SD Card!");
+    Serial.println("Check:");
+    Serial.println("- SD card is inserted");
+    Serial.println("- SD card is formatted (FAT32)");
+    Serial.println("- CS pin connection (pin 21)");
+    while(1) { // Stop execution
+      digitalWrite(ledPin, HIGH);
+      delay(500);
+      digitalWrite(ledPin, LOW);
+      delay(500);
+    }
+  } else {
+    Serial.println("SD card initialized successfully");
+    Serial.printf("SD Total: %lluMB, Used: %lluMB\n", 
+                  SD.totalBytes() / (1024 * 1024), 
+                  SD.usedBytes() / (1024 * 1024));
   }
 
   Serial.println("ESP32 Voice Recorder Ready");
+  Serial.printf("Free heap: %d bytes\n", ESP.getFreeHeap());
   delay(500);
 }
 
